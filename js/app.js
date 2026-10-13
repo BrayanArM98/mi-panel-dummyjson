@@ -33,6 +33,10 @@ const mensajeTareas = document.getElementById('mensaje-tareas');
 const botonesFiltro = document.querySelectorAll('.filtro');
 const inputBuscador = document.getElementById('buscador');
 
+const formTarea = document.getElementById('form-tarea');
+const inputNuevaTarea = document.getElementById('nueva-tarea');
+const btnAgregar = document.getElementById('btn-agregar');
+
 /* =========================================================
    UTILIDADES
    ========================================================= */
@@ -277,6 +281,134 @@ function buscar() {
   pintarTareas();
 }
 
+/* =========================================================
+   4. ACCIONES (DummyJSON solo SIMULA los cambios:
+      si la respuesta es exitosa, actualizamos nuestro arreglo)
+   ========================================================= */
+
+// Agregar  →  POST /todos/add
+async function agregarTarea(evento) {
+  evento.preventDefault();
+  ocultarMensaje(mensajeTareas);
+
+  const texto = inputNuevaTarea.value.trim();
+  if (!texto) {
+    mostrarMensaje(mensajeTareas, 'Escribe el texto de la tarea.');
+    return;
+  }
+
+  btnAgregar.disabled = true;
+  btnAgregar.textContent = 'Agregando…';
+
+  try {
+    const respuesta = await fetch(`${API}/todos/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ todo: texto, completed: false, userId: usuarioActual.id }),
+    });
+    if (!respuesta.ok) {
+      throw new Error(`No se pudo agregar la tarea (error ${respuesta.status}).`);
+    }
+    const nueva = await respuesta.json();
+
+    // DummyJSON regresa siempre el mismo id para las tareas nuevas,
+    // así que le ponemos uno único y la marcamos como "local".
+    tareas = [{ ...nueva, id: Date.now(), local: true }, ...tareas];
+
+    inputNuevaTarea.value = '';
+    pintarTareas();
+    mostrarMensaje(mensajeTareas, 'Tarea agregada.', 'exito');
+  } catch (error) {
+    mostrarMensaje(mensajeTareas, textoDeError(error));
+  } finally {
+    btnAgregar.disabled = false;
+    btnAgregar.textContent = 'Agregar';
+    inputNuevaTarea.focus();
+  }
+}
+
+// Marcar completada / pendiente  →  PUT /todos/{id}
+async function cambiarEstado(id, elementoLi) {
+  ocultarMensaje(mensajeTareas);
+
+  // find: busca la tarea con ese id dentro del arreglo
+  const tarea = tareas.find((t) => t.id === id);
+  if (!tarea) return;
+
+  const nuevoEstado = !tarea.completed;
+  elementoLi.classList.add('ocupada');
+
+  try {
+    // Las tareas agregadas por nosotros no existen en el servidor:
+    // solo se cambian en el arreglo.
+    if (!tarea.local) {
+      const respuesta = await fetch(`${API}/todos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: nuevoEstado }),
+      });
+      if (!respuesta.ok) {
+        throw new Error(`No se pudo actualizar la tarea (error ${respuesta.status}).`);
+      }
+    }
+
+    // map: crea un arreglo nuevo con esa tarea modificada
+    tareas = tareas.map((t) => (t.id === id ? { ...t, completed: nuevoEstado } : t));
+  } catch (error) {
+    mostrarMensaje(mensajeTareas, textoDeError(error));
+  } finally {
+    // Repintamos siempre: si falló, la casilla regresa a su estado anterior
+    pintarTareas();
+  }
+}
+
+// Eliminar  →  DELETE /todos/{id}
+async function eliminarTarea(id, elementoLi) {
+  ocultarMensaje(mensajeTareas);
+
+  const tarea = tareas.find((t) => t.id === id);
+  if (!tarea) return;
+
+  elementoLi.classList.add('ocupada');
+
+  try {
+    if (!tarea.local) {
+      const respuesta = await fetch(`${API}/todos/${id}`, { method: 'DELETE' });
+      if (!respuesta.ok) {
+        throw new Error(`No se pudo eliminar la tarea (error ${respuesta.status}).`);
+      }
+    }
+
+    // filter: nos quedamos con todas menos la eliminada
+    tareas = tareas.filter((t) => t.id !== id);
+    mostrarMensaje(mensajeTareas, 'Tarea eliminada.', 'exito');
+  } catch (error) {
+    mostrarMensaje(mensajeTareas, textoDeError(error));
+  } finally {
+    pintarTareas();
+  }
+}
+
+// Un solo listener en la lista (delegación de eventos) para todas las tareas
+function manejarCambioEnLista(evento) {
+  if (!evento.target.classList.contains('toggle')) return;
+  const li = evento.target.closest('.tarea');
+  cambiarEstado(Number(li.dataset.id), li);
+}
+
+function manejarClickEnLista(evento) {
+  const boton = evento.target.closest('.btn-eliminar');
+  if (!boton) return;
+  const li = boton.closest('.tarea');
+  eliminarTarea(Number(li.dataset.id), li);
+}
+
+function textoDeError(error) {
+  return error instanceof TypeError
+    ? 'No se pudo conectar con el servidor.'
+    : error.message;
+}
+
 // Carga todo el panel: primero el perfil y luego las tareas
 async function cargarPanel() {
   mostrarVista('panel');
@@ -332,6 +464,9 @@ formLogin.addEventListener('submit', iniciarSesion);
 btnLogout.addEventListener('click', () => cerrarSesion());
 botonesFiltro.forEach((boton) => boton.addEventListener('click', cambiarFiltro));
 inputBuscador.addEventListener('input', buscar);
+formTarea.addEventListener('submit', agregarTarea);
+listaEl.addEventListener('change', manejarCambioEnLista);
+listaEl.addEventListener('click', manejarClickEnLista);
 
 // Al recargar la página: si hay token, entra directo al panel
 function iniciar() {
