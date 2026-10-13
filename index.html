@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi panel · DummyJSON</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- defer: el script se ejecuta cuando el HTML ya terminó de cargarse -->
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+
+  <!-- ===================== VISTA: LOGIN ===================== -->
+  <main id="vista-login" class="vista vista-login">
+    <section class="tarjeta login">
+      <h1 class="logo">Mi panel</h1>
+      <p class="subtitulo">Inicia sesión con tu cuenta de DummyJSON</p>
+
+      <form id="form-login" novalidate>
+        <label for="usuario">Usuario</label>
+        <input id="usuario" name="usuario" type="text" autocomplete="username" required>
+
+        <label for="password">Contraseña</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+        <p id="error-login" class="mensaje mensaje-error" role="alert" hidden></p>
+
+        <button id="btn-login" type="submit" class="btn btn-primario">Entrar</button>
+      </form>
+
+      <p class="pista">Usuario de prueba: <code>emilys</code> · Contraseña: <code>emilyspass</code></p>
+    </section>
+  </main>
+
+  <!-- ===================== VISTA: PANEL ===================== -->
+  <div id="vista-panel" class="vista vista-panel" hidden>
+    <header class="barra-superior">
+      <h1 class="logo">Mi panel</h1>
+      <button id="btn-logout" type="button" class="btn btn-secundario">Cerrar sesión</button>
+    </header>
+
+    <main class="contenido">
+      <!-- Perfil del usuario -->
+      <section id="perfil" class="tarjeta perfil" aria-live="polite">
+        <p class="cargando">Cargando perfil…</p>
+      </section>
+
+      <!-- Tareas -->
+      <section class="tarjeta tareas">
+        <h2>Mis tareas</h2>
+
+        <!-- Contadores: total, completadas, pendientes y porcentaje -->
+        <div id="resumen" class="resumen"></div>
+        <div class="barra-progreso" aria-hidden="true">
+          <div id="progreso" class="progreso"></div>
+        </div>
+
+        <!-- Agregar tarea -->
+        <form id="form-tarea" class="form-tarea">
+          <label for="nueva-tarea" class="solo-lector">Nueva tarea</label>
+          <input id="nueva-tarea" type="text" placeholder="Escribe una nueva tarea…" maxlength="120" autocomplete="off">
+          <button id="btn-agregar" type="submit" class="btn btn-primario">Agregar</button>
+        </form>
+
+        <!-- Filtro y buscador -->
+        <div class="controles">
+          <div class="filtros" role="group" aria-label="Filtrar tareas">
+            <button type="button" class="filtro activo" data-filtro="todas">Todas</button>
+            <button type="button" class="filtro" data-filtro="pendientes">Pendientes</button>
+            <button type="button" class="filtro" data-filtro="completadas">Completadas</button>
+          </div>
+          <label for="buscador" class="solo-lector">Buscar tarea</label>
+          <input id="buscador" type="search" placeholder="Buscar tarea…" autocomplete="off">
+        </div>
+
+        <p id="mensaje-tareas" class="mensaje" role="status" hidden></p>
+
+        <ul id="lista-tareas" class="lista"></ul>
+      </section>
+    </main>
+  </div>
+
+</body>
+</html>
