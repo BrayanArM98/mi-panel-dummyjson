@@ -6,6 +6,8 @@
 const API = 'https://dummyjson.com';
 const CLAVE_TOKEN = 'accessToken';
 
+let usuarioActual = null; // datos que regresa /auth/me
+
 /* =========================================================
    REFERENCIAS AL DOM
    ========================================================= */
@@ -17,6 +19,9 @@ const inputUsuario = document.getElementById('usuario');
 const inputPassword = document.getElementById('password');
 const btnLogin = document.getElementById('btn-login');
 const errorLogin = document.getElementById('error-login');
+
+const btnLogout = document.getElementById('btn-logout');
+const perfilEl = document.getElementById('perfil');
 
 /* =========================================================
    UTILIDADES
@@ -50,6 +55,16 @@ function ocultarMensaje(elemento) {
   elemento.hidden = true;
   elemento.textContent = '';
 }
+
+// Convierte texto en HTML seguro (evita que un texto con <etiquetas> se ejecute)
+function escaparHTML(texto) {
+  const div = document.createElement('div');
+  div.textContent = String(texto ?? '');
+  return div.innerHTML;
+}
+
+// Error propio para saber cuándo el servidor respondió 401
+class ErrorSesion extends Error {}
 
 /* =========================================================
    1. INICIAR SESIÓN  →  POST /auth/login
@@ -85,7 +100,7 @@ async function iniciarSesion(evento) {
     const datos = await respuesta.json();
     guardarToken(datos.accessToken);
     formLogin.reset();
-    mostrarVista('panel');
+    await cargarPanel();
   } catch (error) {
     // TypeError = no hubo conexión con el servidor
     const texto = error instanceof TypeError
@@ -99,6 +114,102 @@ async function iniciarSesion(evento) {
 }
 
 /* =========================================================
-   EVENTOS
+   2. VER EL PERFIL  →  GET /auth/me
+   ========================================================= */
+async function obtenerPerfil() {
+  const respuesta = await fetch(`${API}/auth/me`, {
+    headers: { Authorization: `Bearer ${obtenerToken()}` },
+  });
+
+  if (respuesta.status === 401) {
+    throw new ErrorSesion('Tu sesión expiró. Vuelve a iniciar sesión.');
+  }
+  if (!respuesta.ok) {
+    throw new Error(`No se pudo cargar el perfil (error ${respuesta.status}).`);
+  }
+  return respuesta.json();
+}
+
+function pintarPerfil(usuario) {
+  const nombreCompleto = `${usuario.firstName} ${usuario.lastName}`;
+
+  // Datos extra del perfil. Con filter quitamos los que vengan vacíos
+  // y con map los convertimos en HTML.
+  const datosExtra = [
+    { etiqueta: 'Usuario', valor: `@${usuario.username}` },
+    { etiqueta: 'Edad', valor: usuario.age ? `${usuario.age} años` : '' },
+    { etiqueta: 'Teléfono', valor: usuario.phone },
+    { etiqueta: 'Ciudad', valor: usuario.address?.city },
+    { etiqueta: 'Empresa', valor: usuario.company?.name },
+    { etiqueta: 'Puesto', valor: usuario.company?.title },
+  ]
+    .filter((dato) => dato.valor)
+    .map((dato) => `
+      <div>
+        <dt>${escaparHTML(dato.etiqueta)}</dt>
+        <dd>${escaparHTML(dato.valor)}</dd>
+      </div>`)
+    .join('');
+
+  perfilEl.innerHTML = `
+    <img src="${escaparHTML(usuario.image)}" alt="Foto de ${escaparHTML(nombreCompleto)}">
+    <h2>${escaparHTML(nombreCompleto)}</h2>
+    <p class="correo">${escaparHTML(usuario.email)}</p>
+    <dl class="datos">${datosExtra}</dl>
+  `;
+}
+
+// Carga todo el panel: perfil (y después las tareas)
+async function cargarPanel() {
+  mostrarVista('panel');
+  perfilEl.innerHTML = '<p class="cargando">Cargando perfil…</p>';
+
+  try {
+    usuarioActual = await obtenerPerfil();
+    pintarPerfil(usuarioActual);
+  } catch (error) {
+    // Si el servidor respondió 401: borrar token y regresar al login
+    if (error instanceof ErrorSesion) {
+      cerrarSesion(error.message);
+      return;
+    }
+    const texto = error instanceof TypeError
+      ? 'No se pudo conectar con el servidor.'
+      : error.message;
+    perfilEl.innerHTML = `<p class="mensaje mensaje-error">${escaparHTML(texto)}</p>`;
+  }
+}
+
+/* =========================================================
+   CERRAR SESIÓN
+   ========================================================= */
+function cerrarSesion(motivo = '') {
+  borrarToken();
+  usuarioActual = null;
+  perfilEl.innerHTML = '';
+  mostrarVista('login');
+
+  if (motivo) {
+    mostrarMensaje(errorLogin, motivo);
+  } else {
+    ocultarMensaje(errorLogin);
+  }
+  inputUsuario.focus();
+}
+
+/* =========================================================
+   EVENTOS E INICIO
    ========================================================= */
 formLogin.addEventListener('submit', iniciarSesion);
+btnLogout.addEventListener('click', () => cerrarSesion());
+
+// Al recargar la página: si hay token, entra directo al panel
+function iniciar() {
+  if (obtenerToken()) {
+    cargarPanel();
+  } else {
+    mostrarVista('login');
+  }
+}
+
+iniciar();
