@@ -7,6 +7,9 @@ const API = 'https://dummyjson.com';
 const CLAVE_TOKEN = 'accessToken';
 
 let usuarioActual = null; // datos que regresa /auth/me
+let tareas = [];          // arreglo local con las tareas (la "fuente de verdad")
+let filtroActual = 'todas';
+let textoBusqueda = '';
 
 /* =========================================================
    REFERENCIAS AL DOM
@@ -22,6 +25,13 @@ const errorLogin = document.getElementById('error-login');
 
 const btnLogout = document.getElementById('btn-logout');
 const perfilEl = document.getElementById('perfil');
+
+const resumenEl = document.getElementById('resumen');
+const progresoEl = document.getElementById('progreso');
+const listaEl = document.getElementById('lista-tareas');
+const mensajeTareas = document.getElementById('mensaje-tareas');
+const botonesFiltro = document.querySelectorAll('.filtro');
+const inputBuscador = document.getElementById('buscador');
 
 /* =========================================================
    UTILIDADES
@@ -159,7 +169,115 @@ function pintarPerfil(usuario) {
   `;
 }
 
-// Carga todo el panel: perfil (y después las tareas)
+/* =========================================================
+   3. LISTAR LAS TAREAS  →  GET /todos/user/{id}
+   ========================================================= */
+async function cargarTareas(idUsuario) {
+  listaEl.innerHTML = '<li class="vacio">Cargando tareas…</li>';
+  ocultarMensaje(mensajeTareas);
+
+  try {
+    // limit=0 pide todas las tareas del usuario, no solo las primeras
+    const respuesta = await fetch(`${API}/todos/user/${idUsuario}?limit=0`);
+    if (!respuesta.ok) {
+      throw new Error(`No se pudieron cargar las tareas (error ${respuesta.status}).`);
+    }
+    const datos = await respuesta.json();
+    tareas = datos.todos;
+    pintarTareas();
+  } catch (error) {
+    tareas = [];
+    listaEl.innerHTML = '';
+    const texto = error instanceof TypeError
+      ? 'No se pudo conectar con el servidor.'
+      : error.message;
+    mostrarMensaje(mensajeTareas, texto);
+  }
+}
+
+// reduce: cuenta cuántas tareas están completadas
+function calcularResumen(lista) {
+  const total = lista.length;
+  const completadas = lista.reduce(
+    (cuenta, tarea) => (tarea.completed ? cuenta + 1 : cuenta),
+    0,
+  );
+  const pendientes = total - completadas;
+  const porcentaje = total === 0 ? 0 : Math.round((completadas / total) * 100);
+  return { total, completadas, pendientes, porcentaje };
+}
+
+function pintarResumen() {
+  const { total, completadas, pendientes, porcentaje } = calcularResumen(tareas);
+
+  // map: convierte cada contador en una "tarjetita" de HTML
+  resumenEl.innerHTML = [
+    { valor: total, texto: 'Total' },
+    { valor: completadas, texto: 'Completadas' },
+    { valor: pendientes, texto: 'Pendientes' },
+    { valor: `${porcentaje}%`, texto: 'Avance' },
+  ]
+    .map((c) => `<div class="contador"><strong>${c.valor}</strong><span>${c.texto}</span></div>`)
+    .join('');
+
+  progresoEl.style.width = `${porcentaje}%`;
+}
+
+// filter + sort: decide qué tareas se ven y en qué orden
+function obtenerTareasVisibles() {
+  const busqueda = textoBusqueda.toLowerCase();
+
+  return tareas
+    .filter((tarea) => {
+      if (filtroActual === 'pendientes') return !tarea.completed;
+      if (filtroActual === 'completadas') return tarea.completed;
+      return true; // 'todas'
+    })
+    .filter((tarea) => tarea.todo.toLowerCase().includes(busqueda))
+    // Pendientes primero; dentro de cada grupo, las más nuevas (id mayor) arriba
+    .sort((a, b) => Number(a.completed) - Number(b.completed) || b.id - a.id);
+}
+
+function pintarTareas() {
+  const visibles = obtenerTareasVisibles();
+
+  if (visibles.length === 0) {
+    const texto = tareas.length === 0
+      ? 'No tienes tareas todavía.'
+      : 'Ninguna tarea coincide con el filtro o la búsqueda.';
+    listaEl.innerHTML = `<li class="vacio">${texto}</li>`;
+  } else {
+    // map: cada objeto tarea se convierte en un <li>
+    listaEl.innerHTML = visibles
+      .map((tarea) => `
+        <li class="tarea ${tarea.completed ? 'hecha' : ''}" data-id="${tarea.id}">
+          <label class="check">
+            <input type="checkbox" class="toggle" ${tarea.completed ? 'checked' : ''}>
+            <span class="texto">${escaparHTML(tarea.todo)}</span>
+          </label>
+          ${tarea.local ? '<span class="etiqueta" title="Solo existe en tu navegador">nueva</span>' : ''}
+          <button type="button" class="btn-eliminar" title="Eliminar tarea" aria-label="Eliminar tarea">✕</button>
+        </li>`)
+      .join('');
+  }
+
+  pintarResumen();
+}
+
+function cambiarFiltro(evento) {
+  filtroActual = evento.currentTarget.dataset.filtro;
+  botonesFiltro.forEach((boton) => {
+    boton.classList.toggle('activo', boton.dataset.filtro === filtroActual);
+  });
+  pintarTareas();
+}
+
+function buscar() {
+  textoBusqueda = inputBuscador.value.trim();
+  pintarTareas();
+}
+
+// Carga todo el panel: primero el perfil y luego las tareas
 async function cargarPanel() {
   mostrarVista('panel');
   perfilEl.innerHTML = '<p class="cargando">Cargando perfil…</p>';
@@ -167,6 +285,7 @@ async function cargarPanel() {
   try {
     usuarioActual = await obtenerPerfil();
     pintarPerfil(usuarioActual);
+    await cargarTareas(usuarioActual.id);
   } catch (error) {
     // Si el servidor respondió 401: borrar token y regresar al login
     if (error instanceof ErrorSesion) {
@@ -186,7 +305,16 @@ async function cargarPanel() {
 function cerrarSesion(motivo = '') {
   borrarToken();
   usuarioActual = null;
+  tareas = [];
+  filtroActual = 'todas';
+  textoBusqueda = '';
+  inputBuscador.value = '';
+  botonesFiltro.forEach((boton) => {
+    boton.classList.toggle('activo', boton.dataset.filtro === 'todas');
+  });
   perfilEl.innerHTML = '';
+  listaEl.innerHTML = '';
+  ocultarMensaje(mensajeTareas);
   mostrarVista('login');
 
   if (motivo) {
@@ -202,6 +330,8 @@ function cerrarSesion(motivo = '') {
    ========================================================= */
 formLogin.addEventListener('submit', iniciarSesion);
 btnLogout.addEventListener('click', () => cerrarSesion());
+botonesFiltro.forEach((boton) => boton.addEventListener('click', cambiarFiltro));
+inputBuscador.addEventListener('input', buscar);
 
 // Al recargar la página: si hay token, entra directo al panel
 function iniciar() {
